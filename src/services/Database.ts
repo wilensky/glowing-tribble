@@ -1,4 +1,4 @@
-import { getRandomInt, sleep } from "./Util";
+import { getRandomInt, sleep } from "@/helpers/Util";
 
 export enum Operations {
     ADD,

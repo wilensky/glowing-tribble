@@ -1,0 +1,33 @@
+# Yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: PR check
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+env:
+  NODE_VERSION: 22.14.0
+
+jobs:
+  lint:
+    name: PR check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup NodeJS environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm t

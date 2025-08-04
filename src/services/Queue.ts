@@ -1,6 +1,11 @@
 import { Message, Operations } from "./Database";
+import logger from "./Logger";
+
+type Logger = typeof logger;
 
 export class Queue {
+    private logger: Logger;
+
     /** Map of qeueue messages */
     private messages: Map<Message['id'], Message>;
 
@@ -13,17 +18,25 @@ export class Queue {
     /** Finished jobs ids */
     private confirmed: Set<string>;
 
-    constructor() {
+    constructor(logger: Logger) {
+        this.logger = logger;
+
         this.messages = new Map();
         this.reserved = new Map();
         this.reservedGroups = new Set();
         this.confirmed = new Set();
     }
 
-    private markReserved(msg: Message): Message {
+    private getLogger(extra: Record<string, string | number> = {}) {
+      return Object.entries(extra).length === 0 ? this.logger : this.logger.child(extra);
+    }
+
+    private markReserved(msg: Message, wid: number): Message {
         const { id, key } = msg;
+        const logger = this.getLogger().child({ id, key, wid });
 
         if (this.reserved.has(key)) {
+            logger.error('Job already reserved');
             // Raising an error if by any chance we were able to reserve same job twice
             throw new Error('Job for this key is already reserved');
         }
@@ -35,6 +48,8 @@ export class Queue {
         this.reserved.set(id, key);
         this.reservedGroups.add(key);
 
+        logger.info('Reserved');
+
         return msg;
     }
 
@@ -44,21 +59,22 @@ export class Queue {
      * @param wid Worker id
      */
     private markConfirmed(mid: string, wid: number): void {
-        //NB: Worker id can be used to save job-worker correspondence + in logs
-        
+      //NB: Worker id can be used to save job-worker correspondence + in logs
+        this.getLogger().info({ id: mid, wid }, 'Job confirmed');
+
         // Resolving message group without actual message
         const group = this.reserved.get(mid)!;
 
         this.reserved.delete(mid);
         this.reservedGroups.delete(group);
-    
+
         this.confirmed.add(mid);
     }
 
     /**
      * Checks whether given group is currently processing (aka busy)
      * @param group Group identifier
-     * @returns 
+     * @returns
      */
     private isGroupBusy(group: Message['key']): boolean {
         return this.reservedGroups.has(group);
@@ -66,17 +82,18 @@ export class Queue {
 
     /**
      * Enqueues message
-     * @param message 
+     * @param message
      */
     public Enqueue(message: Message) {
         const { id } = message;
         this.messages.set(id, message);
+        this.getLogger().info({ id }, 'Enqueued')
     }
 
     /**
      * Returns next available message from queue
      * @param workerId Worker identifier
-     * @returns 
+     * @returns
      */
     public Dequeue(workerId: number): Readonly<Message> | undefined {
         // Checking whether something has left
@@ -94,8 +111,10 @@ export class Queue {
                 continue;
             }
 
-            return this.markReserved(msg);
+            return this.markReserved(msg, workerId);
         }
+
+        this.getLogger().warn({ wid: workerId }, 'Idling');
 
         // Issuing idle job if all groups are busy to keep worker alive
         return new Message('__idle__', Operations.ADD, 1);
@@ -103,8 +122,8 @@ export class Queue {
 
     /**
      * Confirms processed message
-     * @param workerId 
-     * @param messageId 
+     * @param workerId
+     * @param messageId
      */
     public Confirm(workerId: number, messageId: string) {
         this.markConfirmed(messageId, workerId);

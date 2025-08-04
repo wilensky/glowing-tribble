@@ -1,0 +1,29 @@
+x-build-args:
+  &default-build-args
+  NODE_BASE_IMAGE: ${COMPOSE_NODE_IMAGE:-node:22-alpine3.20}
+
+services:
+  dev:
+    &dev
+    env_file: .env
+    build:
+      target: dev
+      dockerfile: ./docker/Dockerfile
+    volumes:
+      - ./:/app
+  prod:
+    env_file: .env
+    build:
+      dockerfile: ./docker/Dockerfile
+      args:
+        <<: *default-build-args
+  init-env:
+    <<: *dev
+    command: npm run init-env
+  deps:
+    <<: *dev
+    command: npm ci
+  test:
+    <<: *dev
+    command: npm t
+
